@@ -1,4 +1,4 @@
-Partitionieren von Daten
+Replikation von Daten
 ========================
 
 Verzeichnisse & Dateien
