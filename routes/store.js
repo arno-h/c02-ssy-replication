@@ -1,8 +1,9 @@
+const util = require('util');
 const express = require('express');
 const database = require('../src/database');
-const Request = require('request');
+const Axios = require('axios');
+const axios = Axios.create({validateStatus: null});
 const router = express.Router();
-const util = require('util');
 
 // Drei Routen für typische CRUD-Operationen
 router.get('/:id', getItem);
@@ -13,21 +14,19 @@ const collection = database.getCollection('store');
 
 function getItem(req, res) {
     // wir liefern immer von der lokalen DB aus
-    let items = collection.find({key: req.params.id});
-    if (items.length == 0) {
+    let item = collection.findOne({key: req.params.id});
+    if (item === 0) {
         res.status(404).end();
     } else {
-        res.json(items[0].value);
+        res.json(item.value);
     }
 }
 
 function putItem(req, res) {
-    let items = collection.find({key: req.params.id});
-    let item;
-    if (items.length == 0) {
+    let item = collection.findOne({key: req.params.id});
+    if (item === null) {
         item = collection.insert({key: req.params.id, value: req.body});
     } else {
-        item = items[0];
         item.value = req.body;
         collection.update(item);
     }
@@ -38,11 +37,10 @@ function putItem(req, res) {
 }
 
 function delItem(req, res) {
-    let items = collection.find({key: req.params.id});
-    if (items.length == 0) {
+    let item = collection.findOne({key: req.params.id});
+    if (item === null) {
         res.status(404).end();
     } else {
-        let item = items[0];
         collection.remove(item);
         res.json(item.value);
     }
@@ -67,14 +65,23 @@ function replicate(req) {
         // und selben Request dorthin senden
         let port = 3000 + i - 1;
         let url = util.format('http://127.0.0.1:%d/store/%s?source=%d', port, req.params.id, global.server_id);
-        Request({method: req.method, url: url, json: req.body, timeout: 500}, logResponse);
+        axios({method: req.method,
+            url: url,
+            data: req.body,
+            timeout: 500})
+        .then(logResponse)
+        .catch(errResponse);
 
-        function logResponse(err, resp, body) {
+        function logResponse(response) {
+            console.log(util.format('server %d => %d: %s /store/%s STATUS: %d',
+                global.server_id, i, req.method, req.params.id, response.status));
+        }
+
+        function errResponse(error) {
             // wir werten nichts aus, sondern in einem Fehlerfall geben wir nur eine Log-Meldung aus.
             // was bedeutet das für die Datensicherheit im Cluster?
-            if (err) {
-                console.log(err.message);
-            }
+            console.log(util.format('server %d => %d: %s /store/%s ERROR: %s',
+                global.server_id, i, req.method, req.params.id, error.message));
         }
     }
 }
