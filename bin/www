@@ -1,83 +1,40 @@
 #!/usr/bin/env node
 
-/**
- * Module dependencies.
- */
+const cluster = require("cluster");
 
-let app = require('../app');
-let debug = require('debug')('demo1:server');
-let http = require('http');
+// Anzahl der Storage-Dienste
+global.server_count = 3
 
-if (process.argv.length != 4) {
-    console.log('call like: node bin/www <server_id> <server_count>');
-    process.exit(1);
-}
-
-// storing as globals for easy access
-global.server_id = parseInt(process.argv[2]);
-global.server_count = parseInt(process.argv[3]);
-
-if (!(global.server_id > 0) || !(global.server_count > 0) || (global.server_id > global.server_count)) {
-    console.log('server id and server count must be integers; and id < count');
-    process.exit(1);
-}
-
-/**
- * Get port from environment and store in Express.
- */
-
-// server 1 => 3000, server 2 => 3001, ...
-let port = 3000 + global.server_id - 1;
-app.set('port', port);
-
-/**
- * Create HTTP server.
- */
-
-let server = http.createServer(app);
-
-/**
- * Listen on provided port, on all network interfaces.
- */
-
-server.listen(port);
-server.on('error', onError);
-server.on('listening', onListening);
-
-/**
- * Normalize a port into a number, string, or false.
- */
-
-function normalizePort(val) {
-    let port = parseInt(val, 10);
-
-    if (isNaN(port)) {
-        // named pipe
-        return val;
+if (cluster.isMaster) {
+    for (let i = 0; i < global.server_count; i++) {
+        cluster.fork()
     }
-
-    if (port >= 0) {
-        // port number
-        return port;
-    }
-
-    return false;
+    cluster.on("exit", function (replica) {
+        console.log("Replica", replica.id, " has exitted.")
+    });
+    // der Master selbst startet in diesem Beispiel keinen Server
+    console.log("Master process is done.");
+}
+else {
+    const port = 3000 + cluster.worker.id;
+    console.log("Replica " + cluster.worker.id + " started and will be listening on port " + port);
+    const app = require('../app');
+    launchServer(app, port);
 }
 
-/**
- * Event listener for HTTP server "error" event.
- */
+function launchServer(app, port) {
+    const http = require('http');
+    app.set('port', port);
+    let server = http.createServer(app);
+    server.listen(port);
+    server.on('error', onError);
+}
 
 function onError(error) {
     if (error.syscall !== 'listen') {
         throw error;
     }
-
-    let bind = typeof port === 'string'
-        ? 'Pipe ' + port
-        : 'Port ' + port;
-
-    // handle specific listen errors with friendly messages
+    let bind = 'Port ' + port;
     switch (error.code) {
         case 'EACCES':
             console.error(bind + ' requires elevated privileges');
@@ -90,16 +47,4 @@ function onError(error) {
         default:
             throw error;
     }
-}
-
-/**
- * Event listener for HTTP server "listening" event.
- */
-
-function onListening() {
-    let addr = server.address();
-    let bind = typeof addr === 'string'
-        ? 'pipe ' + addr
-        : 'port ' + addr.port;
-    console.log('Listening on ' + bind);
 }
